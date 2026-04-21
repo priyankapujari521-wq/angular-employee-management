@@ -1,0 +1,93 @@
+import { Component, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormControl } from '@angular/forms';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import { EmployeeService, Employee } from './employee.service';
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  templateUrl: './app.html',
+  styleUrl: './employee.css'
+})
+export class AppComponent implements OnInit {
+  empForm: FormGroup;
+  employees: Employee[] = [];
+  filteredEmployees: Employee[] = [];
+  searchControl = new FormControl('');
+  isEditMode = false;
+  currentEditId: number | null = null;
+  isLoading = false;
+
+  constructor(private fb: FormBuilder, private empService: EmployeeService) {
+    // 1. Setup the Reactive Form with Validations
+    this.empForm = this.fb.group({
+      name: ['', [Validators.required, Validators.minLength(3)]],
+      email: ['', [Validators.required, Validators.email]],
+      role: ['', Validators.required],
+      joiningDate: ['', Validators.required]
+    });
+  }
+
+  ngOnInit() {
+    this.loadEmployees();
+
+    // 2. Implementation of RxJS Search with debounceTime (Machine Test Requirement)
+    this.searchControl.valueChanges.pipe(
+      debounceTime(300),
+      distinctUntilChanged()
+    ).subscribe(term => {
+      this.filterEmployees(term || '');
+    });
+  }
+
+  loadEmployees() {
+    this.isLoading = true;
+    this.empService.employees$.subscribe(data => {
+      this.employees = data;
+      this.filteredEmployees = data;
+      this.isLoading = false;
+    });
+  }
+
+  onSubmit() {
+    if (this.empForm.valid) {
+      const employeeData = this.empForm.value;
+
+      if (this.isEditMode && this.currentEditId !== null) {
+        this.empService.updateEmployee(this.currentEditId, employeeData);
+      } else {
+        this.empService.addEmployee(employeeData);
+      }
+
+      this.resetForm();
+    }
+  }
+
+  editEmployee(emp: Employee) {
+    this.isEditMode = true;
+    this.currentEditId = emp.id;
+    this.empForm.patchValue(emp);
+  }
+
+  deleteEmployee(id: number) {
+    if (confirm('Are you sure you want to delete this employee?')) {
+      this.empService.deleteEmployee(id);
+    }
+  }
+
+  filterEmployees(term: string) {
+    const lowTerm = term.toLowerCase();
+    this.filteredEmployees = this.employees.filter(e => 
+      e.name.toLowerCase().includes(lowTerm) || 
+      e.role.toLowerCase().includes(lowTerm)
+    );
+  }
+
+  resetForm() {
+    this.isEditMode = false;
+    this.currentEditId = null;
+    this.empForm.reset();
+  }
+}
